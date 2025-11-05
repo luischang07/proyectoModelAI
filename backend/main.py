@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.config import settings
 from backend.database import init_db
-from backend.routes import training, inference, models
+from backend.routes import training, inference, models, unsupervised
 
 # Crear app
 app = FastAPI(
@@ -26,6 +26,7 @@ app.add_middleware(
 app.include_router(training.router, prefix=settings.API_V1_STR)
 app.include_router(inference.router, prefix=settings.API_V1_STR)
 app.include_router(models.router, prefix=settings.API_V1_STR)
+app.include_router(unsupervised.router, prefix=settings.API_V1_STR)
 
 # Init DB al arranque
 @app.on_event("startup")

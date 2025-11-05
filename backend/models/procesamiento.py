@@ -155,6 +155,41 @@ def prepare_training_patches(
     X, y, _ = create_patches(image, mask, patch_size=patch_size, stride=stride)
     return X, y, X.shape[-1] if X.size else 0
 
+def load_images_only(images_folder: str) -> np.ndarray:
+    """
+    Carga SOLO imágenes (sin máscaras) para entrenamiento NO SUPERVISADO.
+    
+    Útil para autoencoder cuando no hay máscaras etiquetadas disponibles.
+    
+    Devuelve:
+        np.ndarray: Array con todos los parches de todas las imágenes (N, H, W, C)
+    """
+    from pathlib import Path
+    
+    images_path = Path(images_folder)
+    image_files = sorted(images_path.glob("*.tif"))
+    
+    if not image_files:
+        raise ValueError(f"No se encontraron archivos .tif en {images_folder}")
+    
+    all_patches = []
+    
+    for img_file in image_files:
+        # Cargar y normalizar imagen
+        image, _ = load_image(str(img_file))
+        image = normalize_image(image)
+        
+        # Crear parches (sin máscara)
+        patches, _, _ = create_patches(image, mask=None, patch_size=PATCH_SIZE)
+        
+        if patches.size > 0:
+            all_patches.append(patches)
+    
+    if not all_patches:
+        raise ValueError("No se pudieron generar parches de las imágenes")
+    
+    return np.concatenate(all_patches, axis=0)
+
 __all__ = [
     "PATCH_SIZE",
     "load_image",
@@ -164,4 +199,5 @@ __all__ = [
     "reconstruct_from_patches",
     "save_mask_geotiff",
     "prepare_training_patches",
+    "load_images_only",
 ]

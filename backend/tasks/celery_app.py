@@ -20,4 +20,4 @@ celery_app.conf.update(
 celery_app.autodiscover_tasks(['backend.tasks'])
 
 # Importar explícitamente los módulos de tareas para asegurar registro
-from backend.tasks import training_tasks, inference_tasks
+from backend.tasks import training_tasks, inference_tasks, unsupervised_tasks

@@ -26,6 +26,28 @@ class TrainingView(QWidget):
         layout = QVBoxLayout()
         self.setLayout(layout)
         
+        # === TIPO DE ENTRENAMIENTO ===
+        type_group = QGroupBox("🎯 Tipo de Entrenamiento")
+        type_layout = QVBoxLayout()
+        
+        self.training_type_combo = QComboBox()
+        self.training_type_combo.addItems([
+            "Supervisado (con máscaras)",
+            "No Supervisado (sin máscaras - Autoencoder)"
+        ])
+        self.training_type_combo.currentIndexChanged.connect(self.on_training_type_changed)
+        
+        type_help = QLabel(
+            "• <b>Supervisado</b>: Requiere imágenes + máscaras etiquetadas\n"
+            "• <b>No Supervisado</b>: Solo requiere imágenes (aprende patrones normales)"
+        )
+        type_help.setStyleSheet("color: #666; font-size: 10px;")
+        
+        type_layout.addWidget(self.training_type_combo)
+        type_layout.addWidget(type_help)
+        type_group.setLayout(type_layout)
+        layout.addWidget(type_group)
+        
         # === CONFIGURACIÓN ===
         config_group = QGroupBox("⚙️ Configuración")
         config_layout = QVBoxLayout()
@@ -46,7 +68,8 @@ class TrainingView(QWidget):
         self.masks_folder_input.setPlaceholderText("Carpeta con máscaras .tif")
         btn_browse_masks = QPushButton("📁 Buscar")
         btn_browse_masks.clicked.connect(lambda: self.browse_folder(self.masks_folder_input))
-        mask_layout.addWidget(QLabel("Máscaras:"))
+        self.mask_label = QLabel("Máscaras:")
+        mask_layout.addWidget(self.mask_label)
         mask_layout.addWidget(self.masks_folder_input)
         mask_layout.addWidget(btn_browse_masks)
         config_layout.addLayout(mask_layout)
@@ -133,36 +156,69 @@ class TrainingView(QWidget):
         if folder:
             target_input.setText(folder)
     
+    def on_training_type_changed(self, index):
+        """Maneja el cambio de tipo de entrenamiento."""
+        is_supervised = (index == 0)
+        
+        # Habilitar/deshabilitar campos de máscaras
+        self.mask_label.setEnabled(is_supervised)
+        self.masks_folder_input.setEnabled(is_supervised)
+        
+        # Cambiar placeholder según el tipo
+        if is_supervised:
+            self.masks_folder_input.setPlaceholderText("Carpeta con máscaras .tif")
+        else:
+            self.masks_folder_input.setPlaceholderText("No requerido para entrenamiento no supervisado")
+            self.masks_folder_input.clear()
+    
     def start_training(self):
         """Inicia el entrenamiento"""
         images_folder = self.images_folder_input.text()
         masks_folder = self.masks_folder_input.text()
+        is_supervised = (self.training_type_combo.currentIndex() == 0)
         
-        if not images_folder or not masks_folder:
-            QMessageBox.warning(self, "Error", "Selecciona las carpetas de imágenes y máscaras")
+        # Validaciones
+        if not images_folder:
+            QMessageBox.warning(self, "Error", "Selecciona la carpeta de imágenes")
             return
         
         if not os.path.exists(images_folder):
             QMessageBox.warning(self, "Error", f"Carpeta de imágenes no existe:\n{images_folder}")
             return
         
-        if not os.path.exists(masks_folder):
-            QMessageBox.warning(self, "Error", f"Carpeta de máscaras no existe:\n{masks_folder}")
-            return
+        # Solo validar máscaras si es supervisado
+        if is_supervised:
+            if not masks_folder:
+                QMessageBox.warning(self, "Error", "Selecciona la carpeta de máscaras (modo supervisado)")
+                return
+            
+            if not os.path.exists(masks_folder):
+                QMessageBox.warning(self, "Error", f"Carpeta de máscaras no existe:\n{masks_folder}")
+                return
         
         try:
-            response = self.api_client.start_training(
-                images_folder=images_folder,
-                masks_folder=masks_folder,
-                patch_size=self.patch_size_input.value(),
-                stride=self.stride_input.value(),
-                batch_size=self.batch_size_input.value(),
-                epochs=self.epochs_input.value(),
-                backbone=self.backbone_combo.currentText(),
-            )
+            if is_supervised:
+                # Entrenamiento SUPERVISADO (U-Net con máscaras)
+                response = self.api_client.start_training(
+                    images_folder=images_folder,
+                    masks_folder=masks_folder,
+                    patch_size=self.patch_size_input.value(),
+                    stride=self.stride_input.value(),
+                    batch_size=self.batch_size_input.value(),
+                    epochs=self.epochs_input.value(),
+                    backbone=self.backbone_combo.currentText(),
+                )
+                self.log_text.append(f"✅ Entrenamiento SUPERVISADO iniciado: {response['job_id']}")
+            else:
+                # Entrenamiento NO SUPERVISADO (Autoencoder sin máscaras)
+                response = self.api_client.start_unsupervised_training(
+                    images_folder=images_folder,
+                    batch_size=self.batch_size_input.value(),
+                    epochs=self.epochs_input.value(),
+                )
+                self.log_text.append(f"✅ Entrenamiento NO SUPERVISADO iniciado: {response['job_id']}")
             
             self.current_job_id = response["job_id"]
-            self.log_text.append(f"✅ Entrenamiento iniciado: {self.current_job_id}")
             
             self.btn_start.setEnabled(False)
             self.btn_stop.setEnabled(True)

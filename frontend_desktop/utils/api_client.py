@@ -51,6 +51,35 @@ class APIClient:
         response.raise_for_status()
         return response.json()
     
+    def start_unsupervised_training(
+        self,
+        images_folder: str,
+        batch_size: int = 16,
+        epochs: int = 50,
+        latent_dim: int = 128,
+        validation_split: float = 0.2,
+        model_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Inicia un entrenamiento NO SUPERVISADO (Autoencoder).
+        Solo requiere imágenes, NO necesita máscaras.
+        """
+        if model_name is None:
+            from datetime import datetime
+            model_name = f"autoencoder_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        payload = {
+            "model_name": model_name,
+            "images_folder": images_folder,
+            "epochs": epochs,
+            "batch_size": batch_size,
+            "latent_dim": latent_dim,
+            "validation_split": validation_split,
+        }
+        response = self.session.post(f"{self.base_url}/unsupervised/train", json=payload)
+        response.raise_for_status()
+        return response.json()
+    
     # === INFERENCE ===
     def start_prediction(
         self,
