@@ -1,0 +1,204 @@
+# ============================================
+# Python
+# ============================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ============================================
+# IDEs
+# ============================================
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+
+# Spyder
+.spyderproject
+.spyproject
+
+# Rope
+.ropeproject
+
+# ============================================
+# Machine Learning / Data
+# ============================================
+# Modelos entrenados
+models/*.h5
+models/*.keras
+models/*.pb
+models/*.pt
+models/*.pth
+models/*.ckpt
+models/*.weights
+
+# Historial de entrenamiento
+models/history_*.json
+
+# Datasets grandes
+data/train/*.tif
+data/train/*.tiff
+data/masks/*.tif
+data/masks/*.tiff
+data/test/*.tif
+data/test/*.tiff
+data/raw/
+
+# Salidas de predicción
+output/*.tif
+output/*.tiff
+output/*.png
+output/*.jpg
+
+# Logs de TensorFlow/Keras
+logs/*.log
+logs/tensorboard/
+
+# Checkpoints
+checkpoints/
+*.h5
+
+# ============================================
+# Base de datos
+# ============================================
+*.db
+*.sqlite
+*.sqlite3
+app.db
+
+# ============================================
+# Docker
+# ============================================
+# No ignorar docker-compose.yml pero sí los volúmenes
+docker-compose.override.yml
+.dockerignore
+
+# ============================================
+# Sistema Operativo
+# ============================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+
+# ============================================
+# Celery
+# ============================================
+celerybeat-schedule
+celerybeat.pid
+
+# ============================================
+# Temporales
+# ============================================
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+
+# ============================================
+# Archivos de configuración local
+# ============================================
+.env.local
+.env.*.local
+config.local.py
+
+# ============================================
+# Otros
+# ============================================
+# Archivos grandes
+*.zip
+*.tar.gz
+*.rar
+
+# Documentación generada
+docs/_build/
+site/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
