@@ -217,15 +217,53 @@ pip install PyQt5==5.15.9
 
 ```
 data/
-├── train/
-│   ├── ortho_15_10_2021.tif
-│   ├── ortho_24_10_2021.tif
+├── train/           # Imágenes originales multiespectrales
+│   ├── vuelo1.tif
+│   ├── vuelo2.tif
 │   └── ...
-└── masks/
-    ├── mask_15_10_2021.tif
-    ├── mask_24_10_2021.tif
+└── masks/           # Máscaras binarias de segmentación
+    ├── vuelo1.tif   # Mismo nombre que la imagen correspondiente
+    ├── vuelo2.tif
     └── ...
 ```
+
+### 📸 Formato de Imágenes Originales
+
+- **Formato**: `.tif` o `.tiff` (GeoTIFF)
+- **Tipo**: Imágenes multiespectrales capturadas con dron UAV
+- **Canales**: RGB, NIR (Infrarrojo Cercano), RedEdge, etc.
+  - Depende de tu cámara multiespectral (e.g., Parrot Sequoia, MicaSense)
+- **Ubicación**: `data/train/`
+
+### 🎯 Formato de Máscaras de Segmentación
+
+- **Formato**: `.tif` o `.tiff` (GeoTIFF)
+- **Tipo**: Máscaras binarias de anotación
+- **Valores**:
+  - `0` (negro) = Área sana/normal del cultivo
+  - `1` (blanco) = Área con anomalía/problema detectado
+- **Requisitos**:
+  - ⚠️ **Mismo nombre** que la imagen correspondiente (ej: `vuelo1.tif` → `vuelo1.tif`)
+  - ⚠️ **Mismas dimensiones** (ancho × alto) que la imagen
+  - ⚠️ Se recomienda conservar la georeferenciación (opcional)
+- **Ubicación**: `data/masks/`
+
+### 🛠️ Generar Máscaras en Cero (Cultivo Sano)
+
+Si solo tienes imágenes de cultivo sano sin anomalías, usa el script:
+
+```powershell
+python generate_zero_masks.py
+```
+
+Esto creará máscaras completamente negras (valor 0 = todo sano) automáticamente.
+
+### 📝 Herramientas para Crear Máscaras
+
+- **QGIS** (gratuito) - Para imágenes georreferenciadas
+- **LabelMe** - Para anotación manual
+- **GIMP/Photoshop** - Edición de imágenes
+- **Python + OpenCV** - Automatización programática
 
 ## 🎯 Próximos Pasos
 
