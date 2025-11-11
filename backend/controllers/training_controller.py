@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from backend.models.db_models import TrainingJob, MLModel
 from backend.models.ml_models import MLModelWrapper, prepare_data_for_training
 from backend.config import settings
+from backend.utils.gpu_config import print_device_info, configure_gpu, auto_configure
 from sklearn.model_selection import train_test_split
 
 
@@ -105,6 +106,13 @@ class TrainingController:
             return {"success": False, "error": "Job no encontrado"}
         
         try:
+            # Configurar GPU antes de comenzar entrenamiento
+            print("\n" + "="*60)
+            print("🚀 INICIANDO ENTRENAMIENTO")
+            print("="*60)
+            auto_configure(verbose=True)
+            print("="*60 + "\n")
+            
             # Actualizar a running
             TrainingController.update_job_status(db, job_id, "running")
             
@@ -141,12 +149,9 @@ class TrainingController:
                 encoder_weights=job.encoder_weights
             )
             
-            # 4. Callback personalizado para progreso
-            from tensorflow.keras.callbacks import Callback
-            
-            class ProgressCallback(Callback):
+            # 4. Callback personalizado para progreso (PyTorch style)
+            class ProgressCallback:
                 def __init__(self, job_id, db_session, total_epochs):
-                    super().__init__()
                     self.job_id = job_id
                     self.db = db_session
                     self.total_epochs = total_epochs
@@ -215,12 +220,15 @@ class TrainingController:
             model_id = Path(model_path).stem
             file_size = os.path.getsize(model_path) / (1024 * 1024)  # MB
             
+            # Obtener número de parámetros (PyTorch style)
+            num_params = sum(p.numel() for p in ml_model.model.parameters())
+            
             ml_model_entry = MLModel(
                 model_id=model_id,
                 architecture="U-Net",
                 backbone=job.backbone,
                 input_shape=[job.patch_size, job.patch_size, num_channels],
-                num_parameters=ml_model.model.count_params(),
+                num_parameters=num_params,
                 training_job_id=job_id,
                 epochs_trained=job.epochs,
                 final_iou=final_iou,

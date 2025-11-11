@@ -44,7 +44,12 @@ class ResultsView(QWidget):
             for i, model in enumerate(models):
                 self.models_table.setItem(i, 0, QTableWidgetItem(model["model_id"]))
                 self.models_table.setItem(i, 1, QTableWidgetItem(model.get("backbone", "N/A")))
-                self.models_table.setItem(i, 2, QTableWidgetItem(f"{model.get('final_iou', 0):.4f}"))
+                
+                # Manejar final_iou que puede ser None
+                final_iou = model.get('final_iou')
+                iou_text = f"{final_iou:.4f}" if final_iou is not None else "N/A"
+                self.models_table.setItem(i, 2, QTableWidgetItem(iou_text))
+                
                 self.models_table.setItem(i, 3, QTableWidgetItem(str(model.get("epochs_trained", 0))))
                 self.models_table.setItem(i, 4, QTableWidgetItem(model["created_at"][:10]))
             

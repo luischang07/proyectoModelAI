@@ -1,6 +1,15 @@
 # 🌾 U-Net Anomaly Detection System - Arquitectura MVC
 
-Sistema completo de detección de anomalías en imágenes multiespectrales usando U-Net con arquitectura MVC + APIs REST.
+Sistema completo de detección de anomalías en imágenes multiespectrales con **entrenamiento supervisado Y no supervisado** usando arquitectura MVC + APIs REST.
+
+## ✨ Características Principales
+
+- 🎯 **Entrenamiento Supervisado**: U-Net con máscaras etiquetadas (alta precisión)
+- 🧠 **Entrenamiento No Supervisado**: Autoencoder sin máscaras (no requiere etiquetado)
+- 🚀 **Backend REST API**: FastAPI con procesamiento asíncrono (Celery)
+- 🖥️ **Frontend Desktop**: Interfaz gráfica PyQt5 intuitiva
+- 📊 **Monitoreo en tiempo real**: Progreso y métricas en vivo
+- 🐳 **Docker Ready**: Redis containerizado para producción
 
 ## 🏗️ Arquitectura
 
@@ -10,16 +19,20 @@ Sistema completo de detección de anomalías en imágenes multiespectrales usand
 │   │   ├── db_models.py        # SQLAlchemy models
 │   │   ├── ml_models.py        # U-Net wrapper
 │   │   ├── procesamiento.py    # Procesamiento de imágenes
-│   │   └── architecture_unet.py
+│   │   ├── architecture_unet.py        # U-Net para supervisado
+│   │   └── architecture_autoencoder.py # Autoencoder para no supervisado
 │   ├── controllers/            # Capa CONTROLLER (Lógica)
-│   │   ├── training_controller.py
+│   │   ├── training_controller.py      # Entrenamiento supervisado
+│   │   ├── unsupervised_controller.py  # Entrenamiento no supervisado
 │   │   └── inference_controller.py
 │   ├── routes/                 # Endpoints API
-│   │   ├── training.py
+│   │   ├── training.py         # POST /training/start (supervisado)
+│   │   ├── unsupervised.py     # POST /unsupervised/train (no supervisado)
 │   │   ├── inference.py
 │   │   └── models.py
 │   ├── tasks/                  # Celery tasks (async)
 │   │   ├── training_tasks.py
+│   │   ├── unsupervised_tasks.py
 │   │   └── inference_tasks.py
 │   └── main.py                 # FastAPI app
 │
@@ -78,12 +91,28 @@ python -m pip install -r requirements.txt
 
 ## ▶️ Ejecución
 
-### Terminal 1: Redis
+### 🐳 Opción A: Docker (Recomendado para Producción)
+
+```bash
+# Iniciar todos los servicios con un solo comando
+docker-compose up -d
+
+# Ver logs
+docker-compose logs -f
+
+# Detener servicios
+docker-compose down
+```
+
+📚 **[Guía completa de Docker: DOCKER_GUIDE.md](DOCKER_GUIDE.md)**
+
+### 💻 Opción B: Ejecución Local (Desarrollo)
+
+#### Terminal 1: Redis
 
 ```powershell
-# Si usas Docker Compose (Recomendado)
-docker-compose up -d
-# Redis corre en background, no necesitas mantener la terminal abierta
+# Si usas Docker solo para Redis (Recomendado)
+docker-compose up -d redis
 
 # Si usas WSL
 wsl -d Ubuntu
@@ -126,29 +155,72 @@ python start_app.py
 
 ## 📱 Uso de la Aplicación
 
-### 1. Entrenar Modelo
+### 🎯 Seleccionar Tipo de Entrenamiento
+
+La aplicación ahora soporta **DOS modos de entrenamiento**:
+
+#### 1️⃣ **Supervisado (con máscaras)**
+
+- ✅ Requiere: Imágenes + Máscaras etiquetadas
+- ✅ Modelo: U-Net
+- ✅ Ideal para: Alta precisión en anomalías conocidas
+- ✅ Usa cuando: Tienes datos etiquetados manualmente
+
+#### 2️⃣ **No Supervisado (sin máscaras)**
+
+- ✅ Requiere: Solo imágenes (sin máscaras)
+- ✅ Modelo: Autoencoder
+- ✅ Ideal para: Detectar anomalías desconocidas
+- ✅ Usa cuando: NO tienes máscaras etiquetadas
+
+📚 **[Lee la guía completa: TRAINING_GUIDE.md](TRAINING_GUIDE.md)**
+
+---
+
+### 1. Entrenar Modelo (SUPERVISADO)
 
 1. Abre la pestaña **"📚 Entrenar Modelo"**
-2. Selecciona carpeta de **imágenes** (.tif)
-3. Selecciona carpeta de **máscaras** (.tif)
-4. Configura parámetros:
-   - Patch Size: 256 (recomendado)
-   - Stride: 128 (50% overlap)
-   - Batch Size: 8 (ajustar según GPU)
-   - Epochs: 50
-5. Click en **"🚀 INICIAR ENTRENAMIENTO"**
-6. Monitorea el progreso en tiempo real
+2. Selecciona **"Supervisado (con máscaras)"** en el dropdown
+3. Selecciona carpeta de **imágenes** (.tif)
+4. Selecciona carpeta de **máscaras** (.tif) ← **Requerido**
+5. Configura parámetros:
+   - Patch Size: 128 (recomendado, ajustado para memoria)
+   - Stride: 64 (50% overlap)
+   - Batch Size: 4-8 (ajustar según GPU)
+   - Epochs: 25-50
+   - Backbone: resnet34, efficientnetb0, etc.
+6. Click en **"🚀 INICIAR ENTRENAMIENTO"**
+7. Monitorea progreso: Loss, IoU Score en tiempo real
 
-### 2. Inferencia
+### 2. Entrenar Modelo (NO SUPERVISADO)
+
+1. Abre la pestaña **"📚 Entrenar Modelo"**
+2. Selecciona **"No Supervisado (sin máscaras - Autoencoder)"** en el dropdown
+3. Selecciona carpeta de **imágenes** (.tif) - Solo imágenes normales/sanas
+4. Campo de máscaras se deshabilita automáticamente ← **No requerido**
+5. Configura parámetros:
+   - Batch Size: 16 (más alto para autoencoder)
+   - Epochs: 50-100 (necesita más épocas)
+   - Latent Dim: 128 (tamaño del espacio latente)
+6. Click en **"🚀 INICIAR ENTRENAMIENTO"**
+7. Monitorea progreso: Loss, MAE en tiempo real
+
+⚠️ **Importante para No Supervisado**:
+
+- Entrena **SOLO con imágenes NORMALES/SANAS**
+- El modelo aprende qué es "normal"
+- En inferencia detectará anomalías por alto error de reconstrucción
+
+### 3. Inferencia
 
 1. Abre la pestaña **"🔍 Inferencia"**
 2. Selecciona imagen de prueba
-3. Elige modelo entrenado
+3. Elige modelo entrenado (supervisado o no supervisado)
 4. Ajusta umbral (0.5 por defecto)
 5. Click en **"🎯 PREDECIR ANOMALÍAS"**
 6. Revisa resultados en `output/`
 
-### 3. Ver Resultados
+### 4. Ver Resultados
 
 1. Abre la pestaña **"📊 Resultados"**
 2. Ve lista de modelos entrenados
@@ -156,12 +228,31 @@ python start_app.py
 
 ## 🔌 API Endpoints
 
-### Training
+### Training (Supervisado)
 
 ```http
 POST   /api/v1/training/start
 GET    /api/v1/training/status/{job_id}
 DELETE /api/v1/training/cancel/{job_id}
+```
+
+### Training (No Supervisado) ✨ **NUEVO**
+
+```http
+POST   /api/v1/unsupervised/train
+```
+
+**Request Body Example:**
+
+```json
+{
+  "model_name": "autoencoder_cultivo1",
+  "images_folder": "data/images",
+  "epochs": 50,
+  "batch_size": 16,
+  "latent_dim": 128,
+  "validation_split": 0.2
+}
 ```
 
 ### Inference
@@ -213,11 +304,13 @@ pip install PyQt5==5.15.9
 
 ## 📊 Estructura de Datos
 
-### Carpetas Requeridas
+### 📁 Carpetas Requeridas
+
+#### Para Entrenamiento **SUPERVISADO** (con máscaras)
 
 ```
 data/
-├── train/           # Imágenes originales multiespectrales
+├── images/          # Imágenes originales multiespectrales
 │   ├── vuelo1.tif
 │   ├── vuelo2.tif
 │   └── ...
@@ -227,15 +320,30 @@ data/
     └── ...
 ```
 
+#### Para Entrenamiento **NO SUPERVISADO** (sin máscaras) ✨ **NUEVO**
+
+```
+data/
+└── images/          # Solo imágenes NORMALES/SANAS
+    ├── sano_001.tif
+    ├── sano_002.tif
+    ├── sano_003.tif
+    └── ...
+```
+
+⚠️ **Importante**: Para no supervisado, usa **SOLO imágenes sin anomalías** (cultivo sano).
+
+---
+
 ### 📸 Formato de Imágenes Originales
 
 - **Formato**: `.tif` o `.tiff` (GeoTIFF)
 - **Tipo**: Imágenes multiespectrales capturadas con dron UAV
 - **Canales**: RGB, NIR (Infrarrojo Cercano), RedEdge, etc.
   - Depende de tu cámara multiespectral (e.g., Parrot Sequoia, MicaSense)
-- **Ubicación**: `data/train/`
+- **Ubicación**: `data/images/`
 
-### 🎯 Formato de Máscaras de Segmentación
+### 🎯 Formato de Máscaras de Segmentación (Solo para Supervisado)
 
 - **Formato**: `.tif` o `.tiff` (GeoTIFF)
 - **Tipo**: Máscaras binarias de anotación
@@ -247,6 +355,7 @@ data/
   - ⚠️ **Mismas dimensiones** (ancho × alto) que la imagen
   - ⚠️ Se recomienda conservar la georeferenciación (opcional)
 - **Ubicación**: `data/masks/`
+- **🚫 NO requerido** para entrenamiento no supervisado
 
 ### 🛠️ Generar Máscaras en Cero (Cultivo Sano)
 
@@ -258,21 +367,48 @@ python generate_zero_masks.py
 
 Esto creará máscaras completamente negras (valor 0 = todo sano) automáticamente.
 
-### 📝 Herramientas para Crear Máscaras
+**Alternativa**: Usa el modo **No Supervisado** que no requiere máscaras en absoluto! 🎉
+
+### 📝 Herramientas para Crear Máscaras (Solo Supervisado)
 
 - **QGIS** (gratuito) - Para imágenes georreferenciadas
 - **LabelMe** - Para anotación manual
 - **GIMP/Photoshop** - Edición de imágenes
 - **Python + OpenCV** - Automatización programática
 
-## 🎯 Próximos Pasos
+## � Comparación: Supervisado vs No Supervisado
 
+| Característica               | Supervisado         | No Supervisado      |
+| ---------------------------- | ------------------- | ------------------- |
+| **Requiere máscaras**        | ✅ Sí               | ❌ No               |
+| **Modelo**                   | U-Net               | Autoencoder         |
+| **Precisión**                | ⭐⭐⭐⭐⭐ Alta     | ⭐⭐⭐ Media        |
+| **Tiempo preparación**       | 🕐 Alto (etiquetar) | ⚡ Rápido           |
+| **Detecta anomalías nuevas** | ❌ Solo conocidas   | ✅ Cualquiera       |
+| **Cantidad de datos**        | Media (100-1000)    | Alta (1000+)        |
+| **Uso típico**               | Alta precisión      | Exploración inicial |
+
+📚 **[Guía completa: TRAINING_GUIDE.md](TRAINING_GUIDE.md)**
+
+## Próximos Pasos
+
+- [x] Entrenamiento no supervisado (Autoencoder)
+- [x] Interfaz para elegir tipo de entrenamiento
+- [ ] Inferencia con Autoencoder (detectar anomalías)
 - [ ] Añadir autenticación (JWT)
 - [ ] Implementar frontend web (React)
 - [ ] Agregar data augmentation
 - [ ] Soporte para modelos pre-entrenados
 - [ ] Dashboard de métricas (Grafana)
-- [ ] Docker deployment
+- [ ] Docker deployment completo
+
+## 📚 Documentación Adicional
+
+- **[DOCKER_GUIDE.md](DOCKER_GUIDE.md)** - 🐳 Guía completa de despliegue con Docker
+- **[TRAINING_GUIDE.md](TRAINING_GUIDE.md)** - Guía completa de entrenamiento supervisado vs no supervisado
+- **[OPTIMIZACIONES_MEMORIA.md](OPTIMIZACIONES_MEMORIA.md)** - Optimizaciones de memoria para entrenamiento
+- **[PROJECT_STATUS.md](PROJECT_STATUS.md)** - Estado actual del proyecto y arquitectura
+- **[README_MVC.md](README_MVC.md)** - Documentación técnica de arquitectura MVC
 
 ## 📄 Licencia
 

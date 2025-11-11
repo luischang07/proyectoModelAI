@@ -1,8 +1,11 @@
+# Docker Compose para desarrollo local sin GPU
+# Usa este archivo si no tienes nvidia-docker instalado
+
 services:
   # Redis - Message Broker para Celery
   redis:
     image: redis:7-alpine
-    container_name: modelai-redis
+    container_name: modelai-redis-dev
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -17,12 +20,12 @@ services:
     networks:
       - modelai-network
 
-  # Backend API (FastAPI)
+  # Backend API (FastAPI) - CPU only
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    container_name: modelai-backend
+    container_name: modelai-backend-dev
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -37,12 +40,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - DATABASE_URL=sqlite:///./app.db
       - PYTHONUNBUFFERED=1
-      # Configuración de PyTorch y Memoria
-      - PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-max_split_size_mb:256}
-      # Configuración de Modelos (para evitar OOM)
-      - PATCH_SIZE=${PATCH_SIZE:-64}
-      - STRIDE=${STRIDE:-32}
-      - BATCH_SIZE=${BATCH_SIZE:-4}
+      - CUDA_VISIBLE_DEVICES=""  # Forzar CPU
     depends_on:
       redis:
         condition: service_healthy
@@ -54,21 +52,13 @@ services:
       start_period: 40s
     networks:
       - modelai-network
-    # GPU support (requiere nvidia-docker)
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
 
-  # Celery Worker
+  # Celery Worker - CPU only
   celery:
     build:
       context: .
       dockerfile: Dockerfile.celery
-    container_name: modelai-celery
+    container_name: modelai-celery-dev
     restart: unless-stopped
     volumes:
       - ./backend:/app/backend
@@ -81,12 +71,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - DATABASE_URL=sqlite:///./app.db
       - PYTHONUNBUFFERED=1
-      # Configuración de PyTorch y Memoria
-      - PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-max_split_size_mb:256}
-      # Configuración de Modelos (para evitar OOM)
-      - PATCH_SIZE=${PATCH_SIZE:-64}
-      - STRIDE=${STRIDE:-32}
-      - BATCH_SIZE=${BATCH_SIZE:-4}
+      - CUDA_VISIBLE_DEVICES=""  # Forzar CPU
     depends_on:
       redis:
         condition: service_healthy
@@ -94,14 +79,6 @@ services:
         condition: service_healthy
     networks:
       - modelai-network
-    # GPU support (requiere nvidia-docker)
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
 
 volumes:
   redis_data:

@@ -39,15 +39,17 @@ class APIClient:
         response.raise_for_status()
         return response.json()
     
-    def get_training_status(self, job_id: str) -> Dict[str, Any]:
-        """Obtiene el estado de un entrenamiento"""
-        response = self.session.get(f"{self.base_url}/training/status/{job_id}")
+    def get_training_status(self, job_id: str, is_unsupervised: bool = False) -> Dict[str, Any]:
+        """Obtiene el estado de un entrenamiento (supervisado o no supervisado)"""
+        endpoint = "unsupervised" if is_unsupervised else "training"
+        response = self.session.get(f"{self.base_url}/{endpoint}/status/{job_id}")
         response.raise_for_status()
         return response.json()
     
-    def cancel_training(self, job_id: str) -> Dict[str, Any]:
-        """Cancela un entrenamiento"""
-        response = self.session.delete(f"{self.base_url}/training/cancel/{job_id}")
+    def cancel_training(self, job_id: str, is_unsupervised: bool = False) -> Dict[str, Any]:
+        """Cancela un entrenamiento (supervisado o no supervisado)"""
+        endpoint = "unsupervised" if is_unsupervised else "training"
+        response = self.session.delete(f"{self.base_url}/{endpoint}/cancel/{job_id}")
         response.raise_for_status()
         return response.json()
     

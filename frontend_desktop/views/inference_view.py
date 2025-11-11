@@ -103,7 +103,8 @@ class InferenceView(QWidget):
             models = self.api_client.list_models()
             self.model_combo.clear()
             for model in models:
-                self.model_combo.addItem(f"{model['model_id']} (IoU: {model.get('final_iou', 0):.3f})", model['model_id'])
+                iou = model.get('final_iou', 0) or 0  # Manejar None
+                self.model_combo.addItem(f"{model['model_id']} (IoU: {iou:.3f})", model['model_id'])
             self.results_text.append(f"✅ {len(models)} modelos cargados")
         except Exception as e:
             self.results_text.append(f"❌ Error cargando modelos: {str(e)}")

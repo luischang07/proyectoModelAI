@@ -1,0 +1,28 @@
+# Imagen base con PyTorch CUDA
+FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime
+
+# Establecer directorio de trabajo
+WORKDIR /app
+
+# Instalar dependencias del sistema
+RUN apt-get update && apt-get install -y \
+  libgdal-dev \
+  gdal-bin \
+  && rm -rf /var/lib/apt/lists/*
+
+# Copiar requirements
+COPY requirements.txt .
+
+# Instalar dependencias Python
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Actualizar PyTorch a versión nightly con soporte para RTX 5080 (sm_120)
+RUN pip uninstall -y torch torchvision torchaudio && \
+  pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+
+# Copiar código de la aplicación
+COPY backend/ ./backend/
+COPY start_celery.py .
+
+# Comando para iniciar Celery worker
+CMD ["python", "start_celery.py"]

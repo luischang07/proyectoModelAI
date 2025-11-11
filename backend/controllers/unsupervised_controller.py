@@ -17,12 +17,7 @@ from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.models.db_models import TrainingJob, MLModel
 from backend.models import procesamiento
-from backend.models.architecture_autoencoder import (
-    build_autoencoder,
-    compile_autoencoder
-)
-from tensorflow import keras
-
+from backend.utils.gpu_config import print_device_info, configure_gpu, auto_configure
 
 def create_job(
     db: Session,
@@ -52,9 +47,14 @@ def create_job(
     return job
 
 
+def get_job_status(db: Session, job_id: str) -> Optional[TrainingJob]:
+    """Obtiene el estado actual de un trabajo."""
+    return db.query(TrainingJob).filter(TrainingJob.job_id == job_id).first()
+
+
 def update_job_status(
     db: Session, 
-    job_id: int, 
+    job_id: str, 
     status: str, 
     progress: Optional[int] = None,
     current_epoch: Optional[int] = None,
@@ -63,7 +63,7 @@ def update_job_status(
     metrics: Optional[dict] = None
 ):
     """Actualiza el estado del trabajo."""
-    job = db.query(TrainingJob).filter(TrainingJob.id == job_id).first()
+    job = db.query(TrainingJob).filter(TrainingJob.job_id == job_id).first()
     if job:
         job.status = status
         if progress is not None:
@@ -123,7 +123,7 @@ def save_model_metadata(
 
 
 def execute_unsupervised_training(
-    job_id: int,
+    job_id: str,
     model_name: str,
     images_folder: str,
     epochs: int = 50,
@@ -139,160 +139,256 @@ def execute_unsupervised_training(
     db = next(get_db())
     
     try:
+        # Try to configure GPUs (PyTorch). This will print device info.
+        try:
+            auto_configure(verbose=True)
+        except Exception:
+            pass
+
+        print("\n" + "="*60)
+        print("🚀 INICIANDO ENTRENAMIENTO NO SUPERVISADO (PyTorch)")
+        print("="*60)
+
+        # Obtener job para verificar cancelación
+        job = db.query(TrainingJob).filter(TrainingJob.job_id == job_id).first()
+        if not job:
+            raise ValueError(f"Job {job_id} no encontrado")
+
         # Actualizar estado inicial
         update_job_status(db, job_id, "running", 0)
-        
-        # ========== 1. CARGAR SOLO IMÁGENES (sin máscaras) ==========
+
+        # Función para verificar si el job fue cancelado
+        def check_cancelled():
+            db.refresh(job)
+            return job.status == "cancelled"
+
+        # ========== 1. OBTENER RUTAS DE IMÁGENES (lazy loading) ==========
         update_job_status(db, job_id, "running", 10)
         
-        # Cargar solo imágenes (x_data)
-        x_data = procesamiento.load_images_only(images_folder)
-        
-        if len(x_data) == 0:
+        # Importar PyTorch y Dataset personalizado
+        try:
+            import torch
+            import torch.nn as nn
+            import torch.optim as optim
+            from torch.utils.data import DataLoader, random_split
+        except Exception as e:
+            raise RuntimeError(f"PyTorch no está disponible en el entorno: {e}")
+
+        # Obtener rutas de imágenes sin cargarlas en memoria
+        image_paths = procesamiento.get_image_paths(images_folder)
+        if len(image_paths) == 0:
             raise ValueError(f"No se encontraron imágenes en {images_folder}")
         
+        print(f"🖼️ Total de imágenes encontradas: {len(image_paths)}")
+
         update_job_status(db, job_id, "running", 20)
-        
-        # ========== 2. DIVIDIR EN TRAIN/VALIDATION ==========
-        # Solo dividimos las imágenes (no hay y_data)
-        from sklearn.model_selection import train_test_split
-        
-        x_train, x_val = train_test_split(
-            x_data,
-            test_size=validation_split,
-            random_state=42
+
+        # Crear dataset lazy (no carga imágenes en memoria)
+        full_dataset = procesamiento.LazyImageDataset(
+            image_paths=image_paths,
+            patch_size=procesamiento.PATCH_SIZE,
+            cancel_check_fn=check_cancelled
         )
         
+        # Split train/validation
+        train_size = int((1 - validation_split) * len(full_dataset))
+        val_size = len(full_dataset) - train_size
+        train_ds, val_ds = random_split(full_dataset, [train_size, val_size])
+        
+        print(f"📊 Train: {train_size} imágenes, Val: {val_size} imágenes")
+
         update_job_status(db, job_id, "running", 30)
+
+        # Forzar uso de GPU - no permitir CPU
+        if not torch.cuda.is_available():
+            raise RuntimeError("❌ GPU no disponible. El entrenamiento requiere GPU CUDA.")
         
-        # ========== 3. CONSTRUIR AUTOENCODER ==========
-        update_job_status(db, job_id, "running", 35)
-        
-        input_shape = (procesamiento.PATCH_SIZE, procesamiento.PATCH_SIZE, x_train.shape[-1])
-        
-        autoencoder, encoder, decoder = build_autoencoder(
-            input_shape=input_shape,
-            latent_dim=latent_dim
+        device = torch.device('cuda')
+        print(f"🔧 Usando dispositivo: {device} (GPU forzada)")
+
+        # DataLoaders con num_workers=0 para evitar problemas de memoria
+        # pin_memory=True acelera transferencias a GPU
+        train_loader = DataLoader(
+            train_ds, 
+            batch_size=batch_size, 
+            shuffle=True,
+            num_workers=0,  # Evitar problemas de multiprocessing
+            pin_memory=(device.type == 'cuda')
         )
-        
-        compile_autoencoder(autoencoder, learning_rate=0.001)
-        
-        update_job_status(db, job_id, "running", 40)
-        
-        # ========== 4. ENTRENAR EL MODELO ==========
-        update_job_status(db, job_id, "running", 45)
-        
-        # Callbacks
-        callbacks = [
-            keras.callbacks.EarlyStopping(
-                monitor='val_loss',
-                patience=10,
-                restore_best_weights=True
-            ),
-            keras.callbacks.ReduceLROnPlateau(
-                monitor='val_loss',
-                factor=0.5,
-                patience=5,
-                min_lr=1e-6
-            ),
-            keras.callbacks.LambdaCallback(
-                on_epoch_end=lambda epoch, logs: update_job_status(
-                    db, job_id, "running",
-                    progress=45 + int((epoch + 1) / epochs * 40),
-                    current_epoch=epoch + 1,
-                    metrics={"loss": logs['loss'], "val_loss": logs['val_loss']}
+        val_loader = DataLoader(
+            val_ds, 
+            batch_size=batch_size, 
+            shuffle=False,
+            num_workers=0,
+            pin_memory=(device.type == 'cuda')
+        )
+
+        channels = full_dataset.num_channels
+        patch_size = full_dataset.patch_size
+
+        # Simple convolutional autoencoder
+        class ConvAutoencoder(nn.Module):
+            def __init__(self, in_channels=channels, latent_dim=128, img_size=patch_size):
+                super().__init__()
+                # Calcular tamaño después de 3 convoluciones con stride=2
+                encoded_size = img_size // 8
+                flattened_size = 128 * encoded_size * encoded_size
+                
+                self.encoder = nn.Sequential(
+                    nn.Conv2d(in_channels, 32, 3, stride=2, padding=1),
+                    nn.ReLU(True),
+                    nn.Conv2d(32, 64, 3, stride=2, padding=1),
+                    nn.ReLU(True),
+                    nn.Conv2d(64, 128, 3, stride=2, padding=1),
+                    nn.ReLU(True),
+                    nn.Flatten(),
+                    nn.Linear(flattened_size, latent_dim),
                 )
-            )
-        ]
-        
-        # ¡IMPORTANTE! En autoencoder, X e Y son iguales
-        # El modelo aprende a reconstruir la entrada
-        history = autoencoder.fit(
-            x_train, x_train,  # x=entrada, y=misma entrada (reconstrucción)
-            validation_data=(x_val, x_val),
-            epochs=epochs,
-            batch_size=batch_size,
-            callbacks=callbacks,
-            verbose=0
-        )
-        
-        # ========== 5. CALCULAR UMBRAL DE ANOMALÍA ==========
+                self.decoder = nn.Sequential(
+                    nn.Linear(latent_dim, flattened_size),
+                    nn.Unflatten(1, (128, encoded_size, encoded_size)),
+                    nn.ConvTranspose2d(128, 64, 3, stride=2, padding=1, output_padding=1),
+                    nn.ReLU(True),
+                    nn.ConvTranspose2d(64, 32, 3, stride=2, padding=1, output_padding=1),
+                    nn.ReLU(True),
+                    nn.ConvTranspose2d(32, in_channels, 3, stride=2, padding=1, output_padding=1),
+                    nn.Sigmoid(),
+                )
+
+            def forward(self, x):
+                z = self.encoder(x)
+                xrec = self.decoder(z)
+                return xrec
+
+        model = ConvAutoencoder(in_channels=channels, latent_dim=latent_dim, img_size=patch_size).to(device)
+        optimizer = optim.Adam(model.parameters(), lr=1e-3)
+        criterion = nn.MSELoss()
+
+        update_job_status(db, job_id, "running", 40)
+
+        # Training loop
+        epochs_completed = 0
+        for epoch in range(epochs):
+            # Verificar si el job fue cancelado
+            db.refresh(job)
+            if job.status == "cancelled":
+                print("🛑 Entrenamiento cancelado por el usuario")
+                return "Training cancelled by user"
+            
+            model.train()
+            running_loss = 0.0
+            for batch in train_loader:
+                xb = batch.to(device)
+                optimizer.zero_grad()
+                out = model(xb)
+                loss = criterion(out, xb)
+                loss.backward()
+                optimizer.step()
+                running_loss += loss.item() * xb.size(0)
+                
+                # Liberar memoria después de cada batch
+                del xb, out, loss
+                if device.type == 'cuda':
+                    torch.cuda.empty_cache()
+
+            epoch_loss = running_loss / len(train_loader.dataset)
+
+            # validation
+            model.eval()
+            val_loss = 0.0
+            with torch.no_grad():
+                for batch in val_loader:
+                    xb = batch.to(device)
+                    out = model(xb)
+                    l = criterion(out, xb)
+                    val_loss += l.item() * xb.size(0)
+                    
+                    # Liberar memoria después de cada batch
+                    del xb, out, l
+                    if device.type == 'cuda':
+                        torch.cuda.empty_cache()
+            val_loss = val_loss / len(val_loader.dataset)
+
+            epochs_completed = epoch + 1
+            progress = 45 + int((epoch + 1) / epochs * 40)
+            
+            # Print progress para que aparezca en logs de Celery
+            print(f"📊 Epoch {epoch+1}/{epochs} - Loss: {epoch_loss:.6f}, Val Loss: {val_loss:.6f}")
+            
+            update_job_status(db, job_id, "running", progress, current_epoch=epoch+1, metrics={"loss": epoch_loss, "val_loss": val_loss})
+
         update_job_status(db, job_id, "running", 85)
+
+        # Compute reconstruction errors on validation set
+        print("📊 Calculando threshold de anomalías...")
+        model.eval()
+        reconstruction_errors = []
         
-        # Predecir en conjunto de validación
-        reconstructed = autoencoder.predict(x_val, verbose=0)
-        reconstruction_errors = np.mean(np.square(x_val - reconstructed), axis=(1, 2, 3))
-        
-        # Usar percentil 95 como umbral
+        with torch.no_grad():
+            for batch in val_loader:
+                xb = batch.to(device)  # Original image
+                out = model(xb)  # Reconstructed image
+                
+                # Calcular error por imagen
+                error = torch.mean((xb - out) ** 2, dim=(1, 2, 3))  # MSE por imagen
+                reconstruction_errors.extend(error.cpu().numpy())
+                
+                # Liberar memoria
+                del xb, out, error
+                if device.type == 'cuda':
+                    torch.cuda.empty_cache()
+
+        reconstruction_errors = np.array(reconstruction_errors)
         threshold = float(np.percentile(reconstruction_errors, 95))
-        
+        print(f"🎯 Threshold calculado: {threshold:.6f}")
+
         update_job_status(db, job_id, "running", 90)
-        
-        # ========== 6. GUARDAR MODELO ==========
+
+        # Save model and threshold
         models_dir = Path("models")
         models_dir.mkdir(exist_ok=True)
-        
-        model_path = models_dir / f"{model_name}.keras"
-        autoencoder.save(str(model_path))
-        
-        # Guardar también el encoder y decoder por separado
-        encoder.save(str(models_dir / f"{model_name}_encoder.keras"))
-        decoder.save(str(models_dir / f"{model_name}_decoder.keras"))
-        
-        # Guardar umbral en archivo de texto
+        model_path = models_dir / f"{model_name}.pt"
+        try:
+            # Guardar con metadata para poder reconstruir el modelo
+            checkpoint = {
+                'model_state_dict': model.state_dict(),
+                'model_config': {
+                    'model_type': 'unsupervised_autoencoder',
+                    'in_channels': channels,
+                    'latent_dim': latent_dim,
+                    'img_size': patch_size,
+                },
+                'threshold': threshold,
+            }
+            torch.save(checkpoint, str(model_path))
+        except Exception as e:
+            print(f"⚠️ Error guardando el modelo: {e}")
+
         threshold_path = models_dir / f"{model_name}_threshold.txt"
         threshold_path.write_text(str(threshold))
-        
-        # Actualizar job con model_path
-        job = db.query(TrainingJob).filter(TrainingJob.id == job_id).first()
+
+        job = db.query(TrainingJob).filter(TrainingJob.job_id == job_id).first()
         if job:
             job.model_path = str(model_path)
-        
-        update_job_status(
-            db, job_id, "running", 95
-        )
-        
-        # ========== 7. GUARDAR METADATOS ==========
-        final_metrics = {
-            "loss": float(history.history["loss"][-1]),
-            "val_loss": float(history.history["val_loss"][-1]),
-            "mae": float(history.history["mae"][-1]),
-            "val_mae": float(history.history["val_mae"][-1])
-        }
-        
-        epochs_completed = len(history.history['loss'])
-        
+
+        update_job_status(db, job_id, "running", 95)
+
+        final_metrics = {"loss": float(epoch_loss), "val_loss": float(val_loss)}
+
         save_model_metadata(
             db=db,
             model_name=model_name,
             model_path=str(model_path),
-            input_shape=input_shape,
+            input_shape=(procesamiento.PATCH_SIZE, procesamiento.PATCH_SIZE, channels),
             latent_dim=latent_dim,
             threshold=threshold,
             metrics=final_metrics,
             training_job_id=job.job_id if job else "",
             epochs_trained=epochs_completed
         )
-        
-        # ========== 8. FINALIZAR ==========
-        result_message = (
-            f"✓ Entrenamiento NO SUPERVISADO completado\n"
-            f"- Tipo: Autoencoder para detección de anomalías\n"
-            f"- Imágenes entrenamiento: {len(x_train)}\n"
-            f"- Imágenes validación: {len(x_val)}\n"
-            f"- Épocas completadas: {epochs_completed}\n"
-            f"- Loss final: {final_metrics['loss']:.6f}\n"
-            f"- Val Loss final: {final_metrics['val_loss']:.6f}\n"
-            f"- Umbral de anomalía: {threshold:.6f}\n"
-            f"- Modelo guardado: {model_path}"
-        )
-        
-        update_job_status(
-            db, job_id, "completed", 100,
-            result=result_message,
-            metrics=final_metrics
-        )
-        
+
+        update_job_status(db, job_id, "completed", 100, result=f"Modelo guardado: {model_path}", metrics=final_metrics)
+
         return str(model_path)
         
     except Exception as e:
@@ -305,6 +401,7 @@ def execute_unsupervised_training(
 
 __all__ = [
     "create_job",
+    "get_job_status",
     "update_job_status",
     "execute_unsupervised_training"
 ]

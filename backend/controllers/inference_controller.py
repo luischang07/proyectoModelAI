@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 from pathlib import Path
 import numpy as np
+import torch
 
 from sqlalchemy.orm import Session
 from backend.models.db_models import InferenceJob, MLModel
@@ -14,6 +15,7 @@ from backend.models.procesamiento import (
     create_patches,
     reconstruct_from_patches,
     save_mask_geotiff,
+    convert_windows_path_to_wsl,
 )
 from backend.config import settings
 
@@ -99,12 +101,22 @@ class InferenceController:
             InferenceController.update_job_status(db, job_id, "running", progress=0.2)
             
             # 3. Cargar y normalizar imagen
-            image, profile = load_image(job.image_path)
+            # Convertir ruta de Windows a WSL si es necesario
+            image_path = convert_windows_path_to_wsl(job.image_path)
+            image, profile = load_image(image_path)
             image = normalize_image(image)
             InferenceController.update_job_status(db, job_id, "running", progress=0.3)
             
             # 4. Crear parches
-            patch_size = ml_model_entry.input_shape[0]
+            # Para modelos no supervisados, obtener patch_size del modelo cargado
+            if hasattr(ml_model, 'model_type') and ml_model.model_type == 'unsupervised_autoencoder':
+                # Autoencoder: usar el tamaño de la primera imagen del dataset de entrenamiento
+                from backend.models.procesamiento import PATCH_SIZE
+                patch_size = PATCH_SIZE
+            else:
+                # UNet supervisado: usar input_shape de la DB
+                patch_size = ml_model_entry.input_shape[0]
+            
             x_patches, _, coords = create_patches(
                 image,
                 mask=None,
@@ -113,21 +125,49 @@ class InferenceController:
             )
             InferenceController.update_job_status(db, job_id, "running", progress=0.4)
             
-            # 5. Predecir en batches
+            # 5. Predecir en batches con PyTorch
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            ml_model.model.eval()
+            
             probs = []
             total_batches = (len(x_patches) + job.batch_size - 1) // job.batch_size
-            for i in range(0, len(x_patches), job.batch_size):
-                batch = x_patches[i:i + job.batch_size]
-                batch_probs = ml_model.model.predict(batch, verbose=0)
-                probs.append(batch_probs)
-                
-                # Actualizar progreso
-                batch_num = i // job.batch_size + 1
-                progress = 0.4 + 0.4 * (batch_num / total_batches)
-                InferenceController.update_job_status(db, job_id, "running", progress=progress)
+            is_unsupervised = hasattr(ml_model, 'model_type') and ml_model.model_type == 'unsupervised_autoencoder'
+            
+            with torch.no_grad():
+                for i in range(0, len(x_patches), job.batch_size):
+                    batch = x_patches[i:i + job.batch_size]
+                    
+                    # Transponer de (N, H, W, C) a (N, C, H, W) para PyTorch
+                    batch = np.transpose(batch, (0, 3, 1, 2))
+                    
+                    # Convertir a tensor y mover a device
+                    batch_tensor = torch.from_numpy(batch).float().to(device)
+                    
+                    # Predecir
+                    output = ml_model.model(batch_tensor)
+                    
+                    if is_unsupervised:
+                        # Para autoencoder: calcular error de reconstrucción MSE
+                        # output es la reconstrucción (N, C, H, W)
+                        mse = torch.mean((output - batch_tensor) ** 2, dim=1, keepdim=True)  # (N, 1, H, W)
+                        batch_probs = mse.cpu().numpy()
+                        # Transponer (N, 1, H, W) -> (N, H, W, 1)
+                        batch_probs = np.transpose(batch_probs, (0, 2, 3, 1))
+                    else:
+                        # Para UNet supervisado: usar la salida directa
+                        batch_probs = output.cpu().numpy()
+                        # Convertir de (N, C, H, W) -> (N, H, W, C)
+                        batch_probs = np.transpose(batch_probs, (0, 2, 3, 1))
+                    
+                    probs.append(batch_probs)
+                    
+                    # Actualizar progreso
+                    batch_num = i // job.batch_size + 1
+                    progress = 0.4 + 0.4 * (batch_num / total_batches)
+                    InferenceController.update_job_status(db, job_id, "running", progress=progress)
             
             probs = np.concatenate(probs, axis=0)
-            probs2d = probs[..., 0]  # (N, patch, patch)
+            probs2d = probs[..., 0]  # Extraer canal único (N, H, W)
             
             # 6. Reconstruir mosaico
             mosaic = reconstruct_from_patches(
@@ -139,7 +179,16 @@ class InferenceController:
             )
             InferenceController.update_job_status(db, job_id, "running", progress=0.9)
             
-            # 7. Umbral y guardar
+            # 7. Normalizar y aplicar umbral
+            if is_unsupervised:
+                # Para autoencoder: normalizar el mapa de error MSE a [0, 1]
+                mosaic_min = mosaic.min()
+                mosaic_max = mosaic.max()
+                if mosaic_max > mosaic_min:
+                    mosaic = (mosaic - mosaic_min) / (mosaic_max - mosaic_min)
+                else:
+                    mosaic = np.zeros_like(mosaic)
+            
             mask_bin = (mosaic >= job.threshold).astype(np.uint8)
             
             output_filename = f"pred_{job_id}.tif"

@@ -21,10 +21,15 @@ if __name__ == "__main__":
     else:
         celery_cmd = str(celery_exe)
     
+    # Ejecutar celery con output en consola
+    # Usar loglevel WARNING para ver los prints del código
     subprocess.run([
         celery_cmd,
         "-A", "backend.tasks.celery_app",
         "worker",
-        "--loglevel=info",
-        "--pool=solo"  # Para Windows
-    ])
+        "--loglevel=WARNING",  # Nivel WARNING captura prints como warnings
+        "--pool=solo",  # Para Windows/WSL
+    ], 
+    stdout=sys.stdout,  # Redirige stdout a la consola
+    stderr=sys.stderr,  # Redirige stderr a la consola
+    text=True)

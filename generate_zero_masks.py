@@ -85,7 +85,8 @@ def generate_zero_masks(
                 profile.update({
                     'count': 1,           # Una sola banda
                     'dtype': 'uint8',     # Tipo de dato binario
-                    'compress': 'lzw'     # Compresión para ahorrar espacio
+                    'compress': 'lzw',    # Compresión para ahorrar espacio
+                    'nodata': None        # Eliminar valor nodata incompatible
                 })
             
             # Crear máscara en cero (todo negro)

@@ -1,0 +1,64 @@
+# Entornos virtuales
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+.venv-wsl/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Datos (se montan como volúmenes)
+data/
+datasets/
+models/
+output/
+logs/
+
+# Base de datos (se monta como volumen)
+*.db
+*.db-journal
+
+# Documentación
+*.md
+docs/
+
+# Frontend Desktop
+frontend_desktop/
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+test_*.py
+
+# Temporal
+*.tmp
+*.temp
+.cache/
+
+# Scripts no necesarios en Docker
+generate_*.py
+reset_*.py
+check_*.py

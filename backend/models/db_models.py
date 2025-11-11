@@ -4,12 +4,40 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, Text, Boolean, 
 from backend.database import Base
 
 
+class Job(Base):
+    """Modelo genérico para trabajos (entrenamiento, inferencia, etc.)"""
+    __tablename__ = "jobs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    model_name = Column(String, nullable=False)
+    status = Column(String, default="pending")  # pending, running, completed, failed
+    job_type = Column(String, nullable=False)  # supervised_training, unsupervised_training, inference
+    progress = Column(Integer, default=0)
+    logs = Column(Text, nullable=True)
+    result = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ModelMetadata(Base):
+    """Metadatos de modelos entrenados"""
+    __tablename__ = "model_metadata"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False)
+    path = Column(String, nullable=False)
+    architecture = Column(String, nullable=False)  # unet, autoencoder
+    input_shape = Column(String, nullable=False)
+    training_type = Column(String, nullable=False)  # supervised, unsupervised
+    metrics = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class TrainingJob(Base):
     """Modelo para trabajos de entrenamiento"""
     __tablename__ = "training_jobs"
     
-    id = Column(Integer, primary_key=True, index=True)
-    job_id = Column(String, unique=True, index=True, nullable=False)
+    job_id = Column(String, primary_key=True, index=True, nullable=False)
     status = Column(String, default="queued")  # queued, running, completed, failed, cancelled
     progress = Column(Float, default=0.0)
     
@@ -42,6 +70,9 @@ class TrainingJob(Base):
     model_path = Column(String, nullable=True)
     history_path = Column(String, nullable=True)
     
+    # Celery task ID para cancelación
+    celery_task_id = Column(String, nullable=True)
+    
     # Error info
     error_message = Column(Text, nullable=True)
     
@@ -60,8 +91,7 @@ class InferenceJob(Base):
     """Modelo para trabajos de inferencia"""
     __tablename__ = "inference_jobs"
     
-    id = Column(Integer, primary_key=True, index=True)
-    job_id = Column(String, unique=True, index=True, nullable=False)
+    job_id = Column(String, primary_key=True, index=True, nullable=False)
     status = Column(String, default="queued")  # queued, running, completed, failed, cancelled
     progress = Column(Float, default=0.0)
     
@@ -91,8 +121,7 @@ class MLModel(Base):
     """Modelo para almacenar info de modelos entrenados"""
     __tablename__ = "ml_models"
     
-    id = Column(Integer, primary_key=True, index=True)
-    model_id = Column(String, unique=True, index=True, nullable=False)
+    model_id = Column(String, primary_key=True, index=True, nullable=False)
     name = Column(String, nullable=True)
     
     # Info del modelo

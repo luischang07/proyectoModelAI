@@ -22,11 +22,24 @@ class Settings(BaseSettings):
     DATABASE_URL: str = f"sqlite:///{BASE_DIR}/app.db"
     
     # Redis (para Celery)
-    REDIS_HOST: str = "localhost"
-    REDIS_PORT: int = 6379
-    REDIS_DB: int = 0
-    CELERY_BROKER_URL: str = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
-    CELERY_RESULT_BACKEND: str = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
+    REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
+    
+    # Celery broker y backend (soporta REDIS_URL o construcción desde componentes)
+    @property
+    def celery_broker_url(self) -> str:
+        redis_url = os.getenv("REDIS_URL")
+        if redis_url:
+            return redis_url
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+    
+    @property
+    def celery_result_backend(self) -> str:
+        redis_url = os.getenv("REDIS_URL")
+        if redis_url:
+            return redis_url
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
     
     # Directorios
     DATA_DIR: Path = BASE_DIR / "data"

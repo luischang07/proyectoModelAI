@@ -17,6 +17,7 @@ class TrainingView(QWidget):
         super().__init__()
         self.api_client = api_client
         self.current_job_id = None
+        self.is_unsupervised = False  # Tracking del tipo de entrenamiento
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_progress)
         self.init_ui()
@@ -218,7 +219,8 @@ class TrainingView(QWidget):
                 )
                 self.log_text.append(f"✅ Entrenamiento NO SUPERVISADO iniciado: {response['job_id']}")
             
-            self.current_job_id = response["job_id"]
+            self.current_job_id = str(response["job_id"])  # Convertir a string para el signal
+            self.is_unsupervised = not is_supervised  # Guardar el tipo de entrenamiento
             
             self.btn_start.setEnabled(False)
             self.btn_stop.setEnabled(True)
@@ -236,7 +238,7 @@ class TrainingView(QWidget):
             return
         
         try:
-            self.api_client.cancel_training(self.current_job_id)
+            self.api_client.cancel_training(self.current_job_id, self.is_unsupervised)
             self.log_text.append(f"⏹️ Entrenamiento cancelado: {self.current_job_id}")
             self.reset_ui()
         except Exception as e:
@@ -248,24 +250,30 @@ class TrainingView(QWidget):
             return
         
         try:
-            status = self.api_client.get_training_status(self.current_job_id)
+            status = self.api_client.get_training_status(self.current_job_id, self.is_unsupervised)
             
-            # Actualizar barra de progreso
-            progress = int(status["progress"] * 100)
+            # Actualizar barra de progreso (el backend ya devuelve 0-100)
+            progress = int(status.get("progress", 0))
             self.progress_bar.setValue(progress)
             
             # Actualizar etiquetas
-            epoch_text = f"Epoch {status['current_epoch']}/{status['total_epochs']} - {status['status']}"
+            epoch_text = f"Epoch {status.get('current_epoch', 0)}/{status.get('total_epochs', 0)} - {status.get('status', 'unknown')}"
             self.progress_label.setText(epoch_text)
             
             if status.get("metrics"):
                 metrics = status["metrics"]
-                metrics_text = (
-                    f"Loss: {metrics.get('loss', 0):.4f} | "
-                    f"IoU: {metrics.get('iou_score', 0):.4f} | "
-                    f"Val Loss: {metrics.get('val_loss', 0):.4f} | "
-                    f"Val IoU: {metrics.get('val_iou_score', 0):.4f}"
-                )
+                # Construir texto de métricas dinámicamente según lo disponible
+                metrics_parts = []
+                if 'loss' in metrics:
+                    metrics_parts.append(f"Loss: {metrics['loss']:.4f}")
+                if 'iou_score' in metrics:
+                    metrics_parts.append(f"IoU: {metrics['iou_score']:.4f}")
+                if 'val_loss' in metrics:
+                    metrics_parts.append(f"Val Loss: {metrics['val_loss']:.4f}")
+                if 'val_iou_score' in metrics:
+                    metrics_parts.append(f"Val IoU: {metrics['val_iou_score']:.4f}")
+                
+                metrics_text = " | ".join(metrics_parts) if metrics_parts else "Calculando métricas..."
                 self.metrics_label.setText(metrics_text)
             
             # Si terminó
@@ -288,3 +296,4 @@ class TrainingView(QWidget):
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
         self.current_job_id = None
+        self.is_unsupervised = False

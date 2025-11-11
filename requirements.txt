@@ -1,13 +1,11 @@
 # ============================================
-# Core ML Dependencies - VERSIONES FIJAS Y PROBADAS
+# Core ML Dependencies
 # ============================================
-# TensorFlow 2.18.0 con Keras 3.7.0 (última versión)
-# Keras 3.x es independiente y compatible con TF 2.16+
-tensorflow==2.18.0
-keras==3.7.0
-# segmentation-models requiere efficientnet
-segmentation-models==1.0.1
-efficientnet==1.0.0
+# PyTorch - install using official selector from https://pytorch.org/get-started/locally/
+# For CUDA 12.x/13.x (WSL with RTX 50 series):
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+# For CPU-only:
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 # ============================================
 # Data Processing
